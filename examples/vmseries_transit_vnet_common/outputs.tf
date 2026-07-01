@@ -6,19 +6,6 @@ output "natgw_public_ips" {
   } } : null
 }
 
-output "lb_frontend_ips" {
-  description = "IP Addresses of the load balancers."
-  value       = length(var.load_balancers) > 0 ? { for k, v in module.load_balancer : k => v.frontend_ip_configs } : null
-}
-
-output "lb_backend_pool_ids" {
-  description = <<-EOF
-  Backend pool resource IDs for each load balancer, keyed by the load balancer name.
-  Use these values directly as the `lb_backend_pool_ids` input in LB-Sandwich-fw.
-  EOF
-  value       = length(var.load_balancers) > 0 ? { for k, v in module.load_balancer : k => v.backend_pool_id } : null
-}
-
 output "test_vms_usernames" {
   description = "Initial administrative username to use for test VMs."
   value = length(var.test_infrastructure) > 0 ? {

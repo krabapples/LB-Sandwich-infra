@@ -113,57 +113,6 @@ module "natgw" {
   depends_on = [module.vnet]
 }
 
-# Create Load Balancers, both internal and external
-
-module "load_balancer" {
-  source = "../../modules/loadbalancer"
-
-  for_each = var.load_balancers
-
-  name                = "${var.name_prefix}${each.value.name}"
-  region              = var.region
-  resource_group_name = local.resource_group.name
-  zones               = each.value.zones
-  backend_name        = each.value.backend_name
-
-  health_probes = each.value.health_probes
-
-  nsg_auto_rules_settings = try(
-    {
-      nsg_name = try(
-        "${var.name_prefix}${var.vnets[each.value.nsg_auto_rules_settings.nsg_vnet_key].network_security_groups[
-        each.value.nsg_auto_rules_settings.nsg_key].name}",
-        each.value.nsg_auto_rules_settings.nsg_name
-      )
-      nsg_resource_group_name = try(
-        var.vnets[each.value.nsg_auto_rules_settings.nsg_vnet_key].resource_group_name,
-        each.value.nsg_auto_rules_settings.nsg_resource_group_name,
-        null
-      )
-      source_ips    = each.value.nsg_auto_rules_settings.source_ips
-      base_priority = each.value.nsg_auto_rules_settings.base_priority
-    },
-    null
-  )
-
-  frontend_ips = {
-    for k, v in each.value.frontend_ips : k => merge(
-      v,
-      {
-        public_ip_name           = v.create_public_ip ? "${var.name_prefix}${v.public_ip_name}" : v.public_ip_name,
-        public_ip_id             = try(module.public_ip.pip_ids[v.public_ip_key], null)
-        public_ip_address        = try(module.public_ip.pip_ip_addresses[v.public_ip_key], null)
-        public_ip_prefix_id      = try(module.public_ip.ippre_ids[v.public_ip_prefix_key], null)
-        public_ip_prefix_address = try(module.public_ip.ippre_ip_prefixes[v.public_ip_prefix_key], null)
-        subnet_id                = try(module.vnet[each.value.vnet_key].subnet_ids[v.subnet_key], null)
-      }
-    )
-  }
-
-  tags       = var.tags
-  depends_on = [module.vnet]
-}
-
 # Create test infrastructure
 
 resource "random_password" "test" {
