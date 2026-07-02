@@ -1,63 +1,244 @@
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/PaloAltoNetworks/terraform-azurerm-swfw-modules?style=flat-square)
-![GitHub](https://img.shields.io/github/license/PaloAltoNetworks/terraform-modules-swfw-ci-workflows?style=flat-square)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/PaloAltoNetworks/terraform-azurerm-swfw-modules/release_ci.yml?style=flat-square)
-![GitHub issues](https://img.shields.io/github/issues/PaloAltoNetworks/terraform-azurerm-swfw-modules?style=flat-square)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/PaloAltoNetworks/terraform-azurerm-swfw-modules?style=flat-square)
-![Terraform registry downloads total](https://img.shields.io/badge/dynamic/json?color=green&label=downloads%20total&query=data.attributes.total&url=https%3A%2F%2Fregistry.terraform.io%2Fv2%2Fmodules%2FPaloAltoNetworks%2Fswfw-modules%2Fazurerm%2Fdownloads%2Fsummary&style=flat-square)
-![Terraform registry download month](https://img.shields.io/badge/dynamic/json?color=green&label=downloads%20this%20month&query=data.attributes.month&url=https%3A%2F%2Fregistry.terraform.io%2Fv2%2Fmodules%2FPaloAltoNetworks%2Fswfw-modules%2Fazurerm%2Fdownloads%2Fsummary&style=flat-square)
+# LB-Sandwich-infra
 
-# Terraform Modules for Palo Alto Networks Software Firewalls on Azure Cloud
+Terraform deployment for the **network infrastructure layer** of an Azure load balancer sandwich (transit VNet) topology. This repository provisions the VNet, subnets, NSGs, route tables, NAT gateways, and optional test infrastructure — everything the firewalls need to run, but without the firewalls themselves.
 
-## Overview
+The firewall and load balancer layer is deployed separately by [LB-Sandwich-fw](https://github.com/krabapples/LB-Sandwich-fw).
 
-A set of modules for using **Palo Alto Networks Software Firewalls** to provide control and protection
-to your applications running on Azure Cloud. It deploys Software Firewalls and it configures
-aspects such as virtual networks, subnets, network security groups, storage accounts, service principals,
-Panorama virtual machine instances, and more.
+---
 
-The design is heavily based on the [Reference Architecture Guide for Azure VM-Series](https://www.paloaltonetworks.com/resources/guides/azure-architecture-guide) and [Reference Architecture Guide for Azure CloudNGFW](https://www.paloaltonetworks.com/resources/guides/securing-apps-with-cloud-ngfw-for-azure-design-guide).
+## Architecture
 
-For copyright and license see the LICENSE file.
+```
+                        Internet
+                           │
+                    ┌──────▼──────┐
+                    │  Public LB  │  (deployed in LB-Sandwich-fw)
+                    └──────┬──────┘
+                           │
+              ┌────────────┴────────────┐
+       ┌──────▼──────┐           ┌──────▼──────┐
+       │  VM-Series  │           │  VM-Series  │   (deployed in LB-Sandwich-fw)
+       └──────┬──────┘           └──────┬──────┘
+              └────────────┬────────────┘
+                    ┌──────▼──────┐
+                    │  Private LB │  (deployed in LB-Sandwich-fw)
+                    └──────┬──────┘
+                           │
+            ┌──────────────┴──────────────┐
+     ┌──────▼──────┐               ┌──────▼──────┐
+     │  App1 VNet  │               │  App2 VNet  │   (optional test infra, deployed here)
+     │  + Bastion  │               │  + Bastion  │
+     └─────────────┘               └─────────────┘
+```
 
-## Structure
+### Transit VNet subnets
 
-This repository has the following directory structure:
+| Subnet       | CIDR           | Purpose                                            |
+|--------------|----------------|----------------------------------------------------|
+| management   | 10.0.0.0/28    | Firewall management interfaces; NSG + route table  |
+| public       | 10.0.0.16/28   | Firewall untrust interfaces; NSG + route table     |
+| private      | 10.0.0.32/28   | Firewall trust interfaces; route table             |
 
-* `modules` - this directory contains several standalone, reusable, production-grade Terraform modules. Each module is individually documented.
-* `examples` - this directory shows examples of different ways to combine the modules contained in the
-  `modules` directory. \
-  Notice, **this code should NOT be used directly in production**. It might contain examples of sensitive data that normally should not be kept in a repository.
+Route tables enforce blackhole routes between subnets to prevent traffic from bypassing the firewalls.
 
-## Security
+---
 
-Please keep in mind that modules hosted in this repository require sensitive data to work, like: passwords, firewall bootstrap options, etc. We do not provide a mechanism to safely store this information. It's up to you to make sure this data is safely kept.
+## What this repository deploys
 
-Examples provided here are a form of documentation - they should help you understand how to use the modules. They were not written with security in mind. They are here to demonstrate how to utilize code available in this repository and sometimes it's not possible to do it w/o providing variables or data that normally (in production) would not be kept in a VCS.
+| Resource | Description |
+|---|---|
+| `azurerm_resource_group` | Resource group for all resources (optional — can use existing) |
+| `azurerm_virtual_network` | Transit VNet containing all firewall subnets |
+| `azurerm_subnet` | Management, public, and private subnets |
+| `azurerm_network_security_group` | NSG for management subnet (restricts SSH/HTTPS to whitelisted IPs) and public subnet |
+| `azurerm_route_table` | UDRs per subnet enforcing blackhole routes and default route via firewall |
+| `azurerm_virtual_network_peering` | Optional peering to Panorama VNet or spoke VNets |
+| `azurerm_public_ip` / `azurerm_public_ip_prefix` | Optional pre-allocated public IPs or prefixes |
+| `azurerm_nat_gateway` | Optional NAT Gateway for outbound internet access |
+| Test VNets + VMs + Azure Bastion | Optional spoke VNets with test VMs and Bastion hosts for validating firewall traffic |
 
-So before you use this code for something different than training please keep in mind to follow all Terraform and your organization's security best practices.
+---
 
-## Compatibility
+## Prerequisites
 
-The compatibility with Terraform is defined individually per each module. In general, expect the earliest compatible
-Terraform version to be 1.0.0 across most of the modules.
+- Terraform >= 1.5
+- Azure CLI authenticated (`az login`) **or** the `ARM_SUBSCRIPTION_ID` environment variable set
+- An Azure subscription with sufficient quota for the resources above
 
-## Versioning
+No existing Azure resources are required — this repository can start from scratch.
 
-These modules follow the principles of [Semantic Versioning](http://semver.org/). You can find each new release,
-along with the changelog, on the GitHub [Releases](https://github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules/releases) page.
+---
 
-## Getting Help
+## Usage
 
-If you have found a bug, please report it. The preferred way is to create a new issue on the [GitHub issue page](https://github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules/issues).
+### Step 1 — Clone the repository
 
-For consulting support, please contact services-sales@paloaltonetworks.com or your Palo Alto Networks account manager.
+```bash
+git clone https://github.com/krabapples/LB-Sandwich-infra.git
+cd LB-Sandwich-infra
+```
 
-## Contributing
+### Step 2 — Create your tfvars file
 
-Contributions are welcome, and they are greatly appreciated! Every little bit helps,
-and credit will always be given. Please follow our [contributing guide](https://github.com/PaloAltoNetworks/terraform-best-practices/blob/main/CONTRIBUTING.md).
+```bash
+cp example.tfvars terraform.tfvars
+```
 
-<!-- ## Who maintains these modules?
+Open `terraform.tfvars` and fill in the required values (see [Variable reference](#variable-reference) below).
 
-This repository is maintained by [Palo Alto Networks](https://www.paloaltonetworks.com/).
-If you're looking for commercial support or services, send an email to [address not known yet]. -->
+### Step 3 — Initialize Terraform
+
+```bash
+terraform init
+```
+
+This will download all modules from the PaloAltoNetworks GitHub repository (pinned to `v3.5.1`).
+
+### Step 4 — Review the plan
+
+```bash
+terraform plan -var-file=terraform.tfvars
+```
+
+### Step 5 — Deploy
+
+```bash
+terraform apply -var-file=terraform.tfvars
+```
+
+### Step 6 — Pass outputs to LB-Sandwich-fw
+
+After a successful apply, retrieve the subnet IDs needed by [LB-Sandwich-fw](https://github.com/krabapples/LB-Sandwich-fw):
+
+```bash
+terraform output subnet_ids
+```
+
+Copy the values into the `subnet_ids` variable in your LB-Sandwich-fw `terraform.tfvars`.
+
+---
+
+## Variable reference
+
+### General
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `subscription_id` | `string` | — | Azure Subscription ID. Can be omitted if `ARM_SUBSCRIPTION_ID` env var is set |
+| `name_prefix` | `string` | `""` | Prefix added to all created resource names |
+| `create_resource_group` | `bool` | `true` | When `true`, creates a new resource group. When `false`, sources an existing one by `resource_group_name` |
+| `resource_group_name` | `string` | — | Name of the resource group to create or source |
+| `region` | `string` | — | Azure region for all resources |
+| `tags` | `map(string)` | `{}` | Tags applied to all resources |
+
+### Network
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `vnets` | `map(object)` | — | VNet definitions including subnets, NSGs, and route tables. See below |
+| `vnet_peerings` | `map(object)` | `{}` | VNet peering configurations (e.g. to Panorama) |
+| `public_ips` | `object` | — | Pre-allocated public IP addresses and prefixes |
+| `natgws` | `map(object)` | `{}` | NAT Gateway definitions |
+
+#### VNet structure
+
+Each entry in `vnets` supports:
+- `name` — VNet name
+- `address_space` — list of CIDR blocks
+- `subnets` — map of subnet definitions, each with:
+  - `name`, `address_prefixes`
+  - `network_security_group_key` — links to an NSG defined in the same VNet entry
+  - `route_table_key` — links to a route table defined in the same VNet entry
+  - `enable_storage_service_endpoint` — set to `true` on management subnet for bootstrap storage access
+- `network_security_groups` — map of NSG definitions with inbound/outbound rules
+- `route_tables` — map of route table definitions with UDR entries
+
+#### Route table design
+
+The example uses blackhole UDRs to enforce traffic through the firewalls:
+
+| Route table | Blackhole routes | Purpose |
+|---|---|---|
+| mgmt-rt | public subnet, private subnet | Prevents management subnet from routing directly into the dataplane |
+| public-rt | mgmt subnet, private subnet | Prevents the untrust interface from reaching management or trust |
+| private-rt | mgmt subnet, public subnet; default → firewall | Forces all outbound traffic from trust through the firewall |
+
+### Test infrastructure (optional)
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `test_infrastructure` | `map(object)` | `{}` | Spoke VNets with test VMs and Azure Bastion hosts, peered to the transit VNet |
+
+Each test environment entry supports:
+- `vnets` — spoke VNet with subnets, NSGs, and route tables. Set `hub_vnet_key` to peer it to the transit VNet
+- `spoke_vms` — Linux test VMs that run a simple HTTP/HTTPS server on startup (via cloud-init)
+- `bastions` — Azure Bastion host for accessing test VMs without a public IP
+- `authentication` — admin credentials for the test VMs (password auto-generated if not set)
+
+The spoke VMs boot with a minimal web server (`python3 -m http.server`) so you can immediately test HTTP traffic through the firewalls after deployment.
+
+---
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `subnet_ids` | Resource IDs for each subnet in each VNet. Pass the transit VNet subnet IDs to LB-Sandwich-fw |
+| `natgw_public_ips` | Public IP addresses assigned to NAT Gateways |
+| `test_vms_usernames` | Admin username for test VMs |
+| `test_vms_passwords` | Admin password for test VMs (sensitive) |
+| `test_vms_ips` | Private IP addresses of test VMs |
+| `test_lb_frontend_ips` | Frontend IPs of test load balancers (if configured) |
+
+### Getting subnet IDs for LB-Sandwich-fw
+
+```bash
+terraform output subnet_ids
+```
+
+This returns a nested map. The values you need for LB-Sandwich-fw are under the `"transit"` key:
+
+```hcl
+subnet_ids = {
+  "transit" = {
+    "management" = "/subscriptions/.../subnets/mgmt-snet"
+    "public"     = "/subscriptions/.../subnets/public-snet"
+    "private"    = "/subscriptions/.../subnets/private-snet"
+  }
+}
+```
+
+---
+
+## Relationship with LB-Sandwich-fw
+
+This repository is intentionally decoupled from the firewall layer. The split allows you to:
+
+- Deploy or tear down firewalls independently without touching the network
+- Reuse the same network for multiple firewall deployments (e.g. staging vs. production firewalls)
+- Drop firewalls in from [LB-Sandwich-fw](https://github.com/krabapples/LB-Sandwich-fw) or any other deployment tool
+
+When using both repositories together, the typical workflow is:
+
+```
+1. terraform apply  (in LB-Sandwich-infra)  →  network ready
+2. terraform output subnet_ids              →  copy transit VNet subnet IDs
+3. Fill subnet_ids into terraform.tfvars    (in LB-Sandwich-fw)
+4. terraform apply  (in LB-Sandwich-fw)     →  firewalls and LBs ready
+```
+
+---
+
+## Module sources
+
+All modules are sourced from the upstream PaloAltoNetworks repository, pinned to a specific release:
+
+```
+github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/vnet?ref=v3.5.1
+github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/vnet_peering?ref=v3.5.1
+github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/public_ip?ref=v3.5.1
+github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/natgw?ref=v3.5.1
+github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/test_infrastructure?ref=v3.5.1
+```
+
+To upgrade to a newer release, update the `?ref=` tag in `main.tf` and run `terraform init -upgrade`.

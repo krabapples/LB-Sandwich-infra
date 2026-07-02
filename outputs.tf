@@ -1,3 +1,26 @@
+output "subnet_ids" {
+  description = <<-EOF
+  Resource IDs for every subnet in every VNet, keyed by VNet key then subnet key.
+  Pass the transit VNet values to LB-Sandwich-fw as its `subnet_ids` input variable.
+
+  Example usage:
+    subnet_ids = {
+      management = module output subnet_ids["transit"]["management"]
+      public     = module output subnet_ids["transit"]["public"]
+      private    = module output subnet_ids["transit"]["private"]
+    }
+  EOF
+  value = { for vnet_key, vnet in module.vnet : vnet_key => vnet.subnet_ids }
+}
+
+output "natgw_public_ips" {
+  description = "Nat Gateways Public IP resources."
+  value = length(var.natgws) > 0 ? { for k, v in var.natgws : k => {
+    pip        = try(coalesce(module.public_ip.pip_ip_addresses[v.public_ip.key], module.natgw[k].natgw_pip), null)
+    pip_prefix = try(coalesce(module.public_ip.ippre_ip_prefixes[v.public_ip_prefix.key], module.natgw[k].natgw_pip_prefix), null)
+  } } : null
+}
+
 output "test_vms_usernames" {
   description = "Initial administrative username to use for test VMs."
   value = length(var.test_infrastructure) > 0 ? {

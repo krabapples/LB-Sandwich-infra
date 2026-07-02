@@ -22,7 +22,7 @@ locals {
 # Manage the network required for the topology
 
 module "vnet" {
-  source = "../../modules/vnet"
+  source = "github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/vnet?ref=v3.5.1"
 
   for_each = var.vnets
 
@@ -49,7 +49,7 @@ module "vnet" {
 }
 
 module "vnet_peering" {
-  source = "../../modules/vnet_peering"
+  source = "github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/vnet_peering?ref=v3.5.1"
 
   for_each = var.vnet_peerings
 
@@ -68,7 +68,7 @@ module "vnet_peering" {
 }
 
 module "public_ip" {
-  source = "../../modules/public_ip"
+  source = "github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/public_ip?ref=v3.5.1"
 
   region = var.region
   public_ip_addresses = {
@@ -88,7 +88,7 @@ module "public_ip" {
 }
 
 module "natgw" {
-  source = "../../modules/natgw"
+  source = "github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/natgw?ref=v3.5.1"
 
   for_each = var.natgws
 
@@ -185,7 +185,7 @@ locals {
 }
 
 module "test_infrastructure" {
-  source = "../../modules/test_infrastructure"
+  source = "github.com/PaloAltoNetworks/terraform-azurerm-swfw-modules//modules/test_infrastructure?ref=v3.5.1"
 
   for_each = var.test_infrastructure
 
